@@ -4,3 +4,5 @@ from astropy.io import fits
 
 # test
 print 'ok'
+
+print 'nope'

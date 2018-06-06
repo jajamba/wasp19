@@ -6,3 +6,5 @@ from astropy.io import fits
 print 'ok'
 
 print 'nope'
+
+# how the hell do you change stuff

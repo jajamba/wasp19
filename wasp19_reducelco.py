@@ -20,7 +20,7 @@ import pdb
 
 datadir = '/Users/jspake/projects/inprogress/wasp19/data/lco/all'
 
-def main(datadir=datadir, apsize=7, annsize=[12, 17]):
+def main(datadir=datadir, apsize=8, annsize=[13, 17]):
 	# save list of fits files
 	os.chdir(datadir)
 	flist = glob.glob( datadir + "/*.fits*" )
@@ -34,45 +34,10 @@ def main(datadir=datadir, apsize=7, annsize=[12, 17]):
 	if not os.path.exists( datadir + phot_dir_name ):
 		os.makedirs( datadir + phot_dir_name ) 
 
-	# do photometry on first file and get sky coords
-	print 'Frame {0} of {1}'.format( 0, len(flist) )
-	hdul = fits.open( flist[0] )
-	data = hdul[0].data
-	header = hdul[0].header
-	hdul.close()
-	gain = header['GAIN']
-	rdnoise = header['RDNOISE']
-	error = np.sqrt(data*gain) + rdnoise
-	mean, median, std = sigma_clipped_stats(data, sigma=3.0, iters=5) 
-	daofind = DAOStarFinder(fwhm=3.0, threshold=10.*std) 
-	sources = daofind(data - median) 
-	positions = (sources['xcentroid'], sources['ycentroid'])
-	apertures_pix = CircularAperture(positions, r=apsize)
-	annulus_pix = CircularAnnulus(positions, r_in=annsize[0], r_out=annsize[1])
-	apertures_sky = apertures_pix.to_sky( wcs.WCS(header) )
-	annulus_sky = annulus_pix.to_sky( wcs.WCS(header) )
-	apers = [ apertures_sky, annulus_sky ]
-	norm = ImageNormalize(stretch=SqrtStretch())
-	plt.imshow(data)#, cmap='Greys', origin='lower')#, norm=norm)
-	apertures_pix.plot(color='white', lw=1, alpha=0.1)
-	annulus_pix.plot(color='white', lw=1, alpha=0.1)
-	plt.show()
-	pdb.set_trace()
-	phot_table = aperture_photometry(data, apers, wcs=wcs.WCS(header), error=error)
-	bkg_mean = phot_table['aperture_sum_1'] / annulus_pix.area()
-	bkg_sum = bkg_mean * apertures_pix.area()
-	final_sum = phot_table['aperture_sum_0'] - bkg_sum
-	final_error = np.sqrt( phot_table['aperture_sum_err_0']**2 +  phot_table['aperture_sum_err_1']**2 )
-	phot_table['residual_aperture_sum'] = final_sum
-	phot_table['residual_err'] = final_error
-	fname = datadir + phot_dir_name + "phot_table_{0}_{1}s.txt".format(header['MJD-OBS'], header['EXPTIME'])
-	phot_table.write(fname, format='ascii')
-	replace_comma(fname)
-
-	# pass on sky coords and do photometry on all frames
-	for i in range(1,len(flist)):
+	# do photometry on all frames
+	for i in range(0,len(flist)):
 		print 'Frame {0} of {1}'.format( i, len(flist) )
-		do_phot( flist[i], datadir, phot_dir_name, apertures_sky, annulus_sky )
+		do_phot( flist[i], datadir, phot_dir_name, apsize, annsize )
 
 
 
@@ -86,8 +51,7 @@ def replace_comma(fname):
 
 
 # function to do photometry on a given frame
-def do_phot(fname, datadir, phot_dir_name, apertures_sky, annulus_sky ):
-	apers = [ apertures_sky, annulus_sky ]
+def do_phot(fname, datadir, phot_dir_name, apsize, annsize ):
 	hdul = fits.open( fname )
 	if '.fz' in fname:
 		data = hdul[1].data
@@ -101,20 +65,27 @@ def do_phot(fname, datadir, phot_dir_name, apertures_sky, annulus_sky ):
 	if gain == None:
 		a = 1
 	else:
+		data = data.clip(min=0)
 		rdnoise = header['RDNOISE']
 		error = np.sqrt(data*gain) + rdnoise
 		mean, median, std = sigma_clipped_stats(data, sigma=3.0, iters=5) 
-		apertures_pix = apertures_sky.to_pixel( wcs.WCS(header) )
-		annulus_pix = annulus_sky.to_pixel( wcs.WCS(header) )
-		norm = ImageNormalize(stretch=SqrtStretch())
-		plt.imshow(data)#, cmap='Greys', origin='lower', norm=norm)
-		apertures_pix.plot(color='white', lw=1.5, alpha=0.5)
-		annulus_pix.plot(color='white', lw=1.5, alpha=0.5)
-		plt.show()
-		pdb.set_trace()
+		daofind = DAOStarFinder(fwhm=5.0, threshold=5.*std) 
+		sources = daofind(data - median) 
+		positions = (sources['xcentroid'], sources['ycentroid'])
+		apertures_pix = CircularAperture(positions, r=apsize)
+		annulus_pix = CircularAnnulus(positions, r_in=annsize[0], r_out=annsize[1])
+		apertures_sky = apertures_pix.to_sky( wcs.WCS(header) )
+		annulus_sky = annulus_pix.to_sky( wcs.WCS(header) )
+		apers = [ apertures_sky, annulus_sky ]
+		# plt.imshow(data)#, cmap='Greys', origin='lower', norm=norm)
+		# apertures_pix.plot(color='white', lw=1.5, alpha=0.5)
+		# annulus_pix.plot(color='white', lw=1.5, alpha=0.5)
+		# plt.show()
+		# pdb.set_trace()
 		phot_table = aperture_photometry(data, apers, wcs=wcs.WCS(header), error=error)
 		bkg_mean = phot_table['aperture_sum_1'] / annulus_pix.area()
 		bkg_sum = bkg_mean * apertures_pix.area()
+		apertures_pix.area()
 		final_sum = phot_table['aperture_sum_0'] - bkg_sum
 		final_error = np.sqrt( phot_table['aperture_sum_err_0']**2 +  phot_table['aperture_sum_err_1']**2 )
 		phot_table['residual_aperture_sum'] = final_sum
@@ -124,7 +95,9 @@ def do_phot(fname, datadir, phot_dir_name, apertures_sky, annulus_sky ):
 		replace_comma(fname)
 
 
-def convert_phot_files(dirname):
+def convert_phot_files(dirname, ras, decs):
+	# for given list of coordinates (ras, decs) finds stars in phot files
+	# of each frame, and converts to file for each star
 	os.chdir( dirname )
 	flist = glob.glob( "*.txt" )
 	nframes = len(flist)
@@ -138,8 +111,12 @@ def convert_phot_files(dirname):
 		aperture_sum_err_0, aperture_sum_1, aperture_sum_err_1, \
 		residual_aperture_sum, residual_err = np.genfromtxt( flist[i],\
 		 unpack=True, skip_header=1 )
-		nstars = len( numb )
+		nstars = len( ras )
 		for j in range(nstars):
+			dist_ra = ra - ras[j]
+			dist_dec = dec - decs[j]
+			index = np.argmin( np.sqrt( dist_ra**2 + dist_dec**2 ) )
+			print min(np.sqrt( dist_ra**2 + dist_dec**2))
 			line =  mjd, xcenter[j], ycenter[j], ra[j], dec[j], aperture_sum_0[j], \
 			aperture_sum_err_0[j], aperture_sum_1[j], aperture_sum_err_1[j], \
 			residual_aperture_sum[j], residual_err[j] 
